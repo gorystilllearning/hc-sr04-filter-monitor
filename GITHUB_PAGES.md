@@ -13,6 +13,6 @@ URL proyek biasanya berbentuk `https://NAMA_AKUN.github.io/NAMA_REPO/`.
 
 ## Data langsung dari ESP32
 
-Dashboard mengharapkan JSON `actual`, `ema`, `ama`, dan `fixed` dari `/api/readings`; detailnya ada di `INTEGRATION.md`. Bila halaman dibuka melalui GitHub Pages, browser mengaksesnya dengan HTTPS. Koneksi ke ESP32 melalui `http://192.168.x.x` memerlukan dukungan dan izin akses jaringan lokal di browser, serta header CORS dari ESP32. Perangkat pembuka dashboard harus berada di Wi-Fi yang sama. Jika browser tetap memblokir koneksi, sajikan halaman dari ESP32 sendiri.
+Dashboard mengharapkan JSON `actual`, `ema`, `ama`, dan `fixed` dari `/api/readings`; detailnya ada di `INTEGRATION.md`. Bila halaman dibuka melalui GitHub Pages, browser mengaksesnya dengan HTTPS. Koneksi ke ESP32 melalui `http://192.168.x.x` memerlukan dukungan dan izin akses jaringan lokal di browser, serta header CORS yang dibatasi ke origin dashboard. Perangkat pembuka dashboard harus berada di Wi-Fi yang sama. Jika browser tetap memblokir koneksi, sajikan halaman dari ESP32 sendiri.
 
 Mode demo: tambahkan `?demo=1` pada akhir URL.
