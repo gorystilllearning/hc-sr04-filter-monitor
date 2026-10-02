@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#071018">
+  <meta name="description" content="Display real-time EMA, AMA, jarak aktual, dan jarak fixed untuk sensor HC-SR04.">
+  <title>HC-SR04 Filter Monitor</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23071018'/%3E%3Ccircle cx='22' cy='32' r='10' fill='none' stroke='%2329d3c2' stroke-width='5'/%3E%3Ccircle cx='42' cy='32' r='10' fill='none' stroke='%23ffb24a' stroke-width='5'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #071018;
+      --panel: #0b1721;
+      --panel-2: #0f1e2a;
+      --line: #213441;
+      --text: #eef7f6;
+      --muted: #8fa7ad;
+      --actual: #58a6ff;
+      --ema: #ffb24a;
+      --ama: #29d3c2;
+      --fixed: #ff6685;
+      --ok: #50d890;
+      --danger: #ff6685;
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 84% -10%, rgba(41, 211, 194, .11), transparent 34rem),
+        linear-gradient(180deg, #071018 0%, #08131b 100%);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-variant-numeric: tabular-nums;
+    }
+
+    button, input { font: inherit; }
+    button { color: inherit; }
+
+    .shell {
+      width: min(1480px, 100%);
+      margin: 0 auto;
+      padding: 22px clamp(16px, 3vw, 38px) 42px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 22px;
+    }
+
+    .brand { display: flex; align-items: center; gap: 13px; }
+
+    .sensor-mark {
+      width: 48px;
+      height: 48px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px;
+      align-items: center;
+      padding: 7px;
+      border: 1px solid #2a4651;
+      border-radius: 14px;
+      background: #0c1b25;
+      box-shadow: inset 0 0 24px rgba(41, 211, 194, .05);
+    }
+
+    .sensor-mark span {
+      aspect-ratio: 1;
+      border: 3px solid var(--ama);
+      border-radius: 50%;
+      box-shadow: 0 0 13px rgba(41, 211, 194, .2);
+    }
+
+    .eyebrow {
+      margin: 0 0 3px;
+      color: var(--ama);
+      font-size: .72rem;
+      font-weight: 800;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+    }
+
+    h1 { margin: 0; font-size: clamp(1.25rem, 2.2vw, 1.85rem); letter-spacing: -.035em; }
+
+    .status-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+
+    .status-pill, .mode-button {
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(12, 27, 37, .82);
+      padding: 0 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: .83rem;
+      font-weight: 700;
+    }
+
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 4px rgba(255, 102, 133, .1); }
+    .status-pill.online .status-dot { background: var(--ok); box-shadow: 0 0 0 4px rgba(80, 216, 144, .1); }
+    .status-pill.demo .status-dot { background: var(--ema); box-shadow: 0 0 0 4px rgba(255, 178, 74, .1); }
+
+    .mode-button { cursor: pointer; transition: border-color .2s, background .2s; }
+    .mode-button:hover { border-color: #41606d; background: #10232f; }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .metric-card, .panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: linear-gradient(145deg, rgba(15, 30, 42, .96), rgba(9, 23, 32, .96));
+      box-shadow: 0 20px 55px rgba(0, 0, 0, .18);
+    }
+
+    .metric-card { position: relative; overflow: hidden; min-height: 155px; padding: 20px; }
+    .metric-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--tone); }
+    .metric-card.actual { --tone: var(--actual); }
+    .metric-card.ema { --tone: var(--ema); }
+    .metric-card.ama { --tone: var(--ama); }
+    .metric-card.fixed { --tone: var(--fixed); }
+
+    .metric-label { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: .76rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+    .metric-chip { width: 9px; height: 9px; margin-top: 3px; border-radius: 3px; background: var(--tone); box-shadow: 0 0 15px var(--tone); }
+    .metric-value { display: flex; align-items: baseline; gap: 7px; margin: 18px 0 10px; }
+    .metric-number { font-size: clamp(2.25rem, 4vw, 3.55rem); font-weight: 750; letter-spacing: -.06em; line-height: .88; }
+    .metric-unit { color: var(--muted); font-weight: 700; }
+    .metric-foot { color: var(--muted); font-size: .83rem; }
+    .metric-foot strong { color: var(--text); }
+
+    .dashboard-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(310px, .78fr); gap: 14px; }
+    .panel { padding: 20px; min-width: 0; }
+
+    .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+    .panel h2 { margin: 0 0 5px; font-size: 1rem; letter-spacing: -.015em; }
+    .panel-sub { margin: 0; color: var(--muted); font-size: .82rem; }
+
+    .chart-actions { display: flex; align-items: center; gap: 8px; }
+    .icon-button {
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0 12px;
+      background: #0a1821;
+      cursor: pointer;
+      font-size: .78rem;
+      font-weight: 750;
+    }
+    .icon-button:hover { border-color: #41606d; }
+
+    .chart-wrap { height: 390px; position: relative; }
+    canvas { width: 100%; height: 100%; display: block; }
+    .chart-legend { display: flex; gap: 16px; flex-wrap: wrap; padding-top: 13px; border-top: 1px solid rgba(33, 52, 65, .72); }
+    .legend-item { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: .78rem; font-weight: 700; }
+    .legend-line { width: 18px; height: 3px; border-radius: 99px; background: var(--legend); }
+
+    .side-stack { display: grid; gap: 14px; align-content: start; }
+    .error-list { display: grid; gap: 17px; margin-top: 4px; }
+    .error-row { display: grid; gap: 8px; }
+    .error-meta { display: flex; justify-content: space-between; gap: 14px; color: var(--muted); font-size: .82rem; }
+    .error-meta strong { color: var(--text); }
+    .error-track { height: 8px; border-radius: 99px; overflow: hidden; background: #071018; }
+    .error-fill { height: 100%; width: 0; border-radius: inherit; background: var(--tone); transition: width .28s ease; }
+
+    .connection-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .connection-item { padding: 12px; border: 1px solid rgba(33, 52, 65, .8); border-radius: 12px; background: rgba(6, 17, 24, .48); }
+    .connection-item span { display: block; color: var(--muted); font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .connection-item strong { display: block; margin-top: 6px; font-size: .9rem; overflow-wrap: anywhere; }
+
+    dialog {
+      width: min(520px, calc(100% - 32px));
+      border: 1px solid #2c4653;
+      border-radius: 20px;
+      padding: 0;
+      background: #0b1822;
+      color: var(--text);
+      box-shadow: 0 28px 90px rgba(0,0,0,.55);
+    }
+    dialog::backdrop { background: rgba(2, 8, 12, .72); backdrop-filter: blur(5px); }
+    .dialog-body { padding: 24px; }
+    .dialog-body h2 { margin: 0 0 8px; }
+    .dialog-body p { margin: 0 0 18px; color: var(--muted); line-height: 1.6; }
+    .field { display: grid; gap: 8px; margin-bottom: 18px; }
+    .field label { color: var(--muted); font-size: .8rem; font-weight: 750; }
+    .field input { width: 100%; min-height: 45px; border: 1px solid var(--line); border-radius: 11px; padding: 0 12px; background: #071018; color: var(--text); }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; }
+    .primary { background: var(--ama); border-color: var(--ama); color: #031313; }
+
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+    @media (max-width: 980px) {
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .dashboard-grid { grid-template-columns: 1fr; }
+      .side-stack { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 650px) {
+      .shell { padding-top: 16px; }
+      header { align-items: flex-start; }
+      .status-row { max-width: 145px; }
+      .status-pill, .mode-button { min-height: 36px; padding: 0 11px; font-size: .76rem; }
+      .metrics { grid-template-columns: 1fr 1fr; gap: 10px; }
+      .metric-card { min-height: 133px; padding: 16px; }
+      .metric-number { font-size: 2.15rem; }
+      .dashboard-grid, .side-stack { grid-template-columns: 1fr; }
+      .panel { padding: 16px; }
+      .panel-head { align-items: center; }
+      .panel-sub { display: none; }
+      .chart-wrap { height: 330px; }
+    }
+
+    @media (max-width: 420px) {
+      .brand { gap: 9px; }
+      .sensor-mark { width: 42px; height: 42px; }
+      .eyebrow { font-size: .62rem; }
+      h1 { font-size: 1.08rem; }
+      .metrics { grid-template-columns: 1fr; }
+      .metric-card { min-height: 120px; }
+      .metric-value { margin: 14px 0 8px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="brand">
+        <div class="sensor-mark" aria-hidden="true"><span></span><span></span></div>
+        <div>
+          <p class="eyebrow">ESP32 Measurement System</p>
+          <h1>HC-SR04 Filter Monitor</h1>
+        </div>
+      </div>
+      <div class="status-row">
+        <div class="status-pill" id="connectionStatus" role="status"><span class="status-dot"></span><span id="connectionText">Menghubungkan</span></div>
+        <button class="mode-button" id="settingsButton" type="button">Sumber data</button>
+      </div>
+    </header>
+
+    <section class="metrics" aria-label="Nilai pengukuran terbaru">
+      <article class="metric-card actual">
+        <div class="metric-label"><span>Jarak aktual</span><span class="metric-chip"></span></div>
+        <div class="metric-value"><span class="metric-number" id="actualValue">--.-</span><span class="metric-unit">cm</span></div>
+        <div class="metric-foot">Bacaan mentah sensor</div>
+      </article>
+      <article class="metric-card ema">
+        <div class="metric-label"><span>EMA</span><span class="metric-chip"></span></div>
+        <div class="metric-value"><span class="metric-number" id="emaValue">--.-</span><span class="metric-unit">cm</span></div>
+        <div class="metric-foot">Galat <strong id="emaError">--</strong> cm</div>
+      </article>
+      <article class="metric-card ama">
+        <div class="metric-label"><span>AMA</span><span class="metric-chip"></span></div>
+        <div class="metric-value"><span class="metric-number" id="amaValue">--.-</span><span class="metric-unit">cm</span></div>
+        <div class="metric-foot">Galat <strong id="amaError">--</strong> cm</div>
+      </article>
+      <article class="metric-card fixed">
+        <div class="metric-label"><span>Jarak fixed</span><span class="metric-chip"></span></div>
+        <div class="metric-value"><span class="metric-number" id="fixedValue">--.-</span><span class="metric-unit">cm</span></div>
+        <div class="metric-foot">Nilai acuan pengujian</div>
+      </article>
+    </section>
+
+    <section class="dashboard-grid">
+      <article class="panel">
+        <div class="panel-head">
+          <div><h2>Respons sensor real-time</h2><p class="panel-sub">Riwayat 60 sampel terbaru</p></div>
+          <div class="chart-actions">
+            <button class="icon-button" id="pauseButton" type="button">Jeda</button>
+            <button class="icon-button" id="clearButton" type="button">Reset</button>
+          </div>
+        </div>
+        <div class="chart-wrap"><canvas id="chart" aria-label="Grafik aktual, EMA, AMA, dan jarak fixed"></canvas></div>
+        <div class="chart-legend" aria-hidden="true">
+          <span class="legend-item"><i class="legend-line" style="--legend:var(--actual)"></i>Aktual</span>
+          <span class="legend-item"><i class="legend-line" style="--legend:var(--ema)"></i>EMA</span>
+          <span class="legend-item"><i class="legend-line" style="--legend:var(--ama)"></i>AMA</span>
+          <span class="legend-item"><i class="legend-line" style="--legend:var(--fixed)"></i>Fixed</span>
+        </div>
+      </article>
+
+      <aside class="side-stack">
+        <article class="panel">
+          <div class="panel-head"><div><h2>Galat terhadap fixed</h2><p class="panel-sub">Selisih absolut pembacaan terbaru</p></div></div>
+          <div class="error-list">
+            <div class="error-row" style="--tone:var(--actual)"><div class="error-meta"><span>Aktual</span><strong id="actualErrorSide">-- cm</strong></div><div class="error-track"><div class="error-fill" id="actualBar"></div></div></div>
+            <div class="error-row" style="--tone:var(--ema)"><div class="error-meta"><span>EMA</span><strong id="emaErrorSide">-- cm</strong></div><div class="error-track"><div class="error-fill" id="emaBar"></div></div></div>
+            <div class="error-row" style="--tone:var(--ama)"><div class="error-meta"><span>AMA</span><strong id="amaErrorSide">-- cm</strong></div><div class="error-track"><div class="error-fill" id="amaBar"></div></div></div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head"><div><h2>Status pengambilan data</h2><p class="panel-sub">Informasi koneksi terkini</p></div></div>
+          <div class="connection-grid">
+            <div class="connection-item"><span>Mode</span><strong id="modeValue">Live</strong></div>
+            <div class="connection-item"><span>Sampel</span><strong id="sampleCount">0</strong></div>
+            <div class="connection-item"><span>Interval</span><strong id="intervalValue">250 ms</strong></div>
+            <div class="connection-item"><span>Pembaruan</span><strong id="updatedValue">--:--:--</strong></div>
+          </div>
+        </article>
+      </aside>
+    </section>
+  </main>
+
+  <dialog id="settingsDialog">
+    <form class="dialog-body" method="dialog" id="settingsForm">
+      <h2>Sumber data</h2>
+      <p>Untuk Wi-Fi lokal, masukkan alamat IP ESP32. Pastikan perangkat pembuka dashboard terhubung ke jaringan yang sama dan izinkan akses jaringan lokal bila browser memintanya.</p>
+      <div class="field">
+        <label for="baseUrl">Alamat ESP32</label>
+        <input id="baseUrl" type="url" inputmode="url" placeholder="Contoh: http://192.168.4.1">
+      </div>
+      <div class="dialog-actions">
+        <button class="icon-button" id="demoButton" type="button">Pakai demo</button>
+        <button class="icon-button" value="cancel" type="submit">Batal</button>
+        <button class="icon-button primary" id="connectButton" value="default" type="submit">Hubungkan</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    (() => {
+      "use strict";
+      const MAX_POINTS = 60;
+      const POLL_MS = 250;
+      const colors = { actual: "#58a6ff", ema: "#ffb24a", ama: "#29d3c2", fixed: "#ff6685" };
+      const history = { actual: [], ema: [], ama: [], fixed: [] };
+      const $ = (id) => document.getElementById(id);
+      const state = {
+        paused: false,
+        mode: "live",
+        baseUrl: localStorage.getItem("hc-sr04-base-url") || "",
+        timer: null,
+        failures: 0,
+        samples: 0,
+        demoT: 0
+      };
+
+      const els = {
+        status: $("connectionStatus"), connectionText: $("connectionText"), modeValue: $("modeValue"),
+        actual: $("actualValue"), ema: $("emaValue"), ama: $("amaValue"), fixed: $("fixedValue"),
+        emaError: $("emaError"), amaError: $("amaError"), actualErrorSide: $("actualErrorSide"),
+        emaErrorSide: $("emaErrorSide"), amaErrorSide: $("amaErrorSide"), actualBar: $("actualBar"),
+        emaBar: $("emaBar"), amaBar: $("amaBar"), sampleCount: $("sampleCount"), updated: $("updatedValue"),
+        dialog: $("settingsDialog"), baseUrl: $("baseUrl"), chart: $("chart")
+      };
+
+      function endpoint() {
+        return `${state.baseUrl.replace(/\/$/, "")}/api/readings`;
+      }
+
+      function requestOptions() {
+        const options = { cache: "no-store", signal: AbortSignal.timeout(1200) };
+        if (/^http:\/\/(?:192\.168\.|10\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(state.baseUrl)) {
+          options.mode = "cors";
+          options.targetAddressSpace = "local";
+        }
+        return options;
+      }
+
+      function setStatus(type, label) {
+        els.status.className = `status-pill ${type}`;
+        els.connectionText.textContent = label;
+        els.modeValue.textContent = type === "demo" ? "Demo" : type === "online" ? "Live" : "Terputus";
+      }
+
+      function validate(data) {
+        const result = {};
+        for (const key of ["actual", "ema", "ama", "fixed"]) {
+          const value = Number(data[key]);
+          if (!Number.isFinite(value)) throw new Error(`Nilai ${key} tidak valid`);
+          result[key] = value;
+        }
+        return result;
+      }
+
+      function demoReading() {
+        state.demoT += .22;
+        const target = state.demoT % 22 < 11 ? 30 : 10;
+        const actual = target + Math.sin(state.demoT * 5.1) * .42 + Math.sin(state.demoT * 1.3) * .16;
+        const prevEma = history.ema.at(-1) ?? actual;
+        const prevAma = history.ama.at(-1) ?? actual;
+        const ema = prevEma + .10 * (actual - prevEma);
+        const activity = Math.min(1, Math.abs(actual - prevAma) / 4);
+        const adaptive = .02 + activity * .42;
+        const ama = prevAma + adaptive * (actual - prevAma);
+        return { actual, ema, ama, fixed: target };
+      }
+
+      async function readOnce() {
+        if (state.paused) return;
+        if (state.mode === "demo") {
+          consume(demoReading());
+          return;
+        }
+        try {
+          const response = await fetch(endpoint(), requestOptions());
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          consume(validate(await response.json()));
+          state.failures = 0;
+          setStatus("online", "Terhubung");
+        } catch (error) {
+          state.failures += 1;
+          setStatus("offline", "Menunggu ESP32");
+        }
+      }
+
+      function consume(reading) {
+        const data = validate(reading);
+        Object.keys(history).forEach((key) => {
+          history[key].push(data[key]);
+          if (history[key].length > MAX_POINTS) history[key].shift();
+        });
+        state.samples += 1;
+        els.actual.textContent = data.actual.toFixed(1);
+        els.ema.textContent = data.ema.toFixed(1);
+        els.ama.textContent = data.ama.toFixed(1);
+        els.fixed.textContent = data.fixed.toFixed(1);
+        const errors = {
+          actual: Math.abs(data.actual - data.fixed),
+          ema: Math.abs(data.ema - data.fixed),
+          ama: Math.abs(data.ama - data.fixed)
+        };
+        els.emaError.textContent = errors.ema.toFixed(2);
+        els.amaError.textContent = errors.ama.toFixed(2);
+        els.actualErrorSide.textContent = `${errors.actual.toFixed(2)} cm`;
+        els.emaErrorSide.textContent = `${errors.ema.toFixed(2)} cm`;
+        els.amaErrorSide.textContent = `${errors.ama.toFixed(2)} cm`;
+        const maxError = Math.max(1, errors.actual, errors.ema, errors.ama);
+        els.actualBar.style.width = `${errors.actual / maxError * 100}%`;
+        els.emaBar.style.width = `${errors.ema / maxError * 100}%`;
+        els.amaBar.style.width = `${errors.ama / maxError * 100}%`;
+        els.sampleCount.textContent = state.samples.toLocaleString("id-ID");
+        els.updated.textContent = new Date().toLocaleTimeString("id-ID", { hour12: false });
+        drawChart();
+      }
+
+      function drawChart() {
+        const canvas = els.chart;
+        const rect = canvas.getBoundingClientRect();
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const width = Math.max(1, Math.floor(rect.width * dpr));
+        const height = Math.max(1, Math.floor(rect.height * dpr));
+        if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+        const ctx = canvas.getContext("2d");
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const w = rect.width, h = rect.height;
+        ctx.clearRect(0, 0, w, h);
+        const pad = { left: 46, right: 12, top: 12, bottom: 28 };
+        const values = Object.values(history).flat();
+        if (!values.length) {
+          ctx.fillStyle = "#8fa7ad"; ctx.font = "14px system-ui"; ctx.textAlign = "center";
+          ctx.fillText("Menunggu data pengukuran…", w / 2, h / 2); return;
+        }
+        let min = Math.min(...values), max = Math.max(...values);
+        const margin = Math.max(1, (max - min) * .16);
+        min -= margin; max += margin;
+        const plotW = w - pad.left - pad.right, plotH = h - pad.top - pad.bottom;
+        ctx.lineWidth = 1; ctx.strokeStyle = "rgba(80, 116, 132, .25)"; ctx.fillStyle = "#78939a";
+        ctx.font = "12px system-ui"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+        for (let i = 0; i <= 4; i += 1) {
+          const y = pad.top + plotH * i / 4;
+          ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w - pad.right, y); ctx.stroke();
+          ctx.fillText((max - (max - min) * i / 4).toFixed(1), pad.left - 9, y);
+        }
+        ctx.textAlign = "center"; ctx.textBaseline = "top";
+        ctx.fillText("sekarang", w - pad.right - 21, h - pad.bottom + 9);
+        ctx.save(); ctx.beginPath(); ctx.rect(pad.left, pad.top, plotW, plotH); ctx.clip();
+        for (const key of ["fixed", "actual", "ema", "ama"]) {
+          const series = history[key];
+          if (series.length < 2) continue;
+          ctx.beginPath(); ctx.lineWidth = key === "fixed" ? 1.5 : 2.4; ctx.strokeStyle = colors[key];
+          ctx.setLineDash(key === "fixed" ? [7, 6] : []); ctx.globalAlpha = key === "actual" ? .75 : 1;
+          series.forEach((value, index) => {
+            const x = pad.left + plotW * index / Math.max(1, MAX_POINTS - 1);
+            const y = pad.top + (max - value) / (max - min) * plotH;
+            index === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+          });
+          ctx.stroke();
+        }
+        ctx.restore(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      }
+
+      function clearHistory() {
+        Object.values(history).forEach((series) => series.splice(0));
+        state.samples = 0; els.sampleCount.textContent = "0"; drawChart();
+      }
+
+      function restart() {
+        clearInterval(state.timer);
+        state.failures = 0;
+        state.timer = setInterval(readOnce, POLL_MS);
+        readOnce();
+      }
+
+      $("settingsButton").addEventListener("click", () => { els.baseUrl.value = state.baseUrl; els.dialog.showModal(); });
+      $("settingsForm").addEventListener("submit", (event) => {
+        if (event.submitter?.value !== "default") return;
+        state.baseUrl = els.baseUrl.value.trim(); localStorage.setItem("hc-sr04-base-url", state.baseUrl);
+        state.mode = "live"; restart();
+      });
+      $("demoButton").addEventListener("click", () => { state.mode = "demo"; els.dialog.close(); setStatus("demo", "Mode demo"); restart(); });
+      $("pauseButton").addEventListener("click", () => {
+        state.paused = !state.paused; $("pauseButton").textContent = state.paused ? "Lanjut" : "Jeda";
+      });
+      $("clearButton").addEventListener("click", clearHistory);
+      window.addEventListener("resize", drawChart);
+
+      $("intervalValue").textContent = `${POLL_MS} ms`;
+      if (location.search.includes("demo=1")) state.mode = "demo";
+      if (state.mode === "demo") setStatus("demo", "Mode demo");
+      restart();
+    })();
+  </script>
+</body>
+</html>
